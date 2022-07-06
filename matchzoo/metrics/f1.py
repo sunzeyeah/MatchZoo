@@ -4,14 +4,14 @@ import numpy as np
 from matchzoo import engine
 
 
-class Recall(engine.BaseMetric):
-    """Recall metric."""
+class F1(engine.BaseMetric):
+    """F1 metric."""
 
-    ALIAS = 'recall'
+    ALIAS = 'f1'
 
     def __init__(self, k: int = 1, threshold: float = 0.5):
         """
-        :class:`RecallMetric` constructor.
+        :class:`F1Metric` constructor.
 
         :param k: Number of results to consider.
         :param threshold: the label threshold of relevance degree.
@@ -25,21 +25,25 @@ class Recall(engine.BaseMetric):
 
     def __call__(self, y_true: np.array, y_pred: np.array) -> float:
         """
-        Calculate recall@k.
+        Calculate f1@k.
 
         :param y_true: The ground true label of each document.
         :param y_pred: The predicted scores of each document.
 
-        :return: Recall @ k
+        :return: f1 @ k
         :raises: ValueError: len(r) must be >= k.
         """
-        t = 0
+        fp = 0
+        fn = 0
         tp = 0
-
         for label, score in zip(y_true, y_pred):
-            if label > 0:
-                t += 1
+            if label <= 0:
                 if score > self._threshold:
-                    tp += 1
+                    fp += 1
+                else:
+                    fn += 1
+            elif score > self._threshold:
+                tp += 1
+        denominator = tp + 0.5 * (fp + fn)
 
-        return tp / t if t > 0 else 0.0
+        return tp / denominator if denominator > 0 else 0.0

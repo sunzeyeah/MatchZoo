@@ -26,7 +26,8 @@ class BaseModel(abc.ABC):
     def __init__(
         self,
         params: engine.ParamTable = None,
-        backend: keras.models.Model = None
+        backend: keras.models.Model = None,
+        optimizer: keras.optimizers.Optimizer = None
     ):
         """
         :class:`BaseModel` constructor.
@@ -37,6 +38,7 @@ class BaseModel(abc.ABC):
         """
         self._params = params or self.get_default_params()
         self._backend = backend
+        self._optimizer = optimizer
 
     @classmethod
     def get_default_params(
@@ -203,7 +205,7 @@ class BaseModel(abc.ABC):
             >>> model.compile()
 
         """
-        self._backend.compile(optimizer=self._params['optimizer'],
+        self._backend.compile(optimizer=self._optimizer,
                               loss=self._params['task'].loss)
 
     def fit(
@@ -322,8 +324,8 @@ class BaseModel(abc.ABC):
                 metric_func(K.variable(y), K.variable(y_pred))).mean()
 
         if matchzoo_metrics:
-            if not isinstance(self.params['task'], tasks.Ranking):
-                raise ValueError("Matchzoo metrics only works on ranking.")
+            # if not isinstance(self.params['task'], tasks.Ranking):
+            #     raise ValueError("Matchzoo metrics only works on ranking.")
             for metric in matchzoo_metrics:
                 result[metric] = self._eval_metric_on_data_frame(
                     metric, x['id_left'], y, y_pred)
@@ -368,13 +370,18 @@ class BaseModel(abc.ABC):
     ):
         eval_df = pd.DataFrame(data={
             'id': id_left,
-            'true': y.squeeze(),
-            'pred': y_pred.squeeze()
+            'true': y[:, 1].squeeze(),
+            'pred': y_pred[:, 1].squeeze()
+            # 'true': y.squeeze(),
+            # 'pred': y_pred.squeeze()
         })
         assert isinstance(metric, engine.BaseMetric)
-        val = eval_df.groupby(by='id').apply(
-            lambda df: metric(df['true'].values, df['pred'].values)
-        ).mean()
+
+        # val = eval_df.groupby(by='id').apply(
+        #     lambda df: metric(df['true'].values, df['pred'].values)
+        # ).mean()
+        val = metric(eval_df['true'].values, eval_df['pred'].values)
+
         return val
 
     def predict(

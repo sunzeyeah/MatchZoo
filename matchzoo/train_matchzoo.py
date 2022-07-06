@@ -12,11 +12,16 @@ import numpy as np
 import matchzoo as mz
 
 from transformers import BertTokenizer
+from keras.optimizers import Adam
+
+
+logging.basicConfig(
+    format="%(asctime)s %(levelname)-4s [%(filename)s:%(lineno)s]  %(message)s",
+    datefmt="%Y/%m/%d %H:%M:%S",
+    level=logging.INFO
+)
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S",
-                    level=logging.INFO)
 
 
 def get_parser():
@@ -59,12 +64,16 @@ def get_parser():
                         help="word/character embedding dimension")
     parser.add_argument("--dropout", default=0.1, type=float,
                         help="drop out rate")
-    parser.add_argument("--optimizer", default="adam", type=str,
-                        help="optimizer name")
     parser.add_argument("--do_lower_case", default=True, type=bool,
                         help="do lower case in tokenization")
     parser.add_argument("--mask_whole_word", default=True, type=bool,
                         help="mask whole word in tokenization")
+    # optimization
+    parser.add_argument("--optimizer", default="adam", type=str,
+                        help="optimizer name")
+    parser.add_argument("--learning_rate", default=1e-3, type=float,
+                        help="learning rate")
+    # arci & arcii
     parser.add_argument("--num_blocks", default=1, type=int,
                         help="number of blocks")
     parser.add_argument("--num_filters", default="[128]", type=str,
@@ -100,19 +109,22 @@ def get_parser():
     return args
 
 
-def get_generator(args, data_pack, embedding_matrix):
-    if args.model == "arci":
-        generator = mz.PairDataGenerator(data_pack, num_dup=args.num_dup, num_neg=args.num_neg,
-                                       batch_size=args.train_batch_size)
-    elif args.model == "drmm":
-        generator = mz.HistogramPairDataGenerator(data_pack, embedding_matrix, args.bin_size, hist_mode=args.hist_mode,
-                                                num_dup=args.num_dup, num_neg=args.num_neg, batch_size=args.train_batch_size)
-    elif args.model == "match_pyramid":
-        generator = mz.DPoolPairDataGenerator(data_pack,
-                                            fixed_length_left=args.max_seq_len, fixed_length_right=args.max_seq_len,
-                                            num_dup=args.num_dup, num_neg=args.num_neg, batch_size=args.train_batch_size)
-    else:
-        raise ValueError("Unsupported model names: {}".format(args.model))
+def get_generator(args, data_pack, embedding_matrix, stage):
+    shuffle = True if stage == "train" else False
+    batch_size = args.train_batch_size if stage == "train" else args.eval_batch_size
+    generator = mz.DataGenerator(data_pack, batch_size=batch_size, shuffle=shuffle)
+    # if args.model == "arci":
+    #     generator = mz.PairDataGenerator(data_pack, num_dup=args.num_dup, num_neg=args.num_neg,
+    #                                    batch_size=args.train_batch_size)
+    # elif args.model == "drmm":
+    #     generator = mz.HistogramPairDataGenerator(data_pack, embedding_matrix, args.bin_size, hist_mode=args.hist_mode,
+    #                                             num_dup=args.num_dup, num_neg=args.num_neg, batch_size=args.train_batch_size)
+    # elif args.model == "match_pyramid":
+    #     generator = mz.DPoolPairDataGenerator(data_pack,
+    #                                         fixed_length_left=args.max_seq_len, fixed_length_right=args.max_seq_len,
+    #                                         num_dup=args.num_dup, num_neg=args.num_neg, batch_size=args.train_batch_size)
+    # else:
+    #     raise ValueError("Unsupported model names: {}".format(args.model))
 
     return generator
 
@@ -132,6 +144,10 @@ def main():
     if args.do_train:
         train_pack = mz.datasets.ccks2022_task9.load_data(args.input_dir, 'train')
         train_pack_processed = preprocessor.fit_transform(train_pack, verbose=0)
+        if args.optimizer == "adam":
+            optimizer = Adam(lr=args.learning_rate)
+        else:
+            raise ValueError(f"Unsupported optimizer type: {args.optimizer}")
     if args.do_eval:
         valid_pack = mz.datasets.ccks2022_task9.load_data(args.input_dir, 'valid')
         valid_pack_processed = preprocessor.transform(valid_pack, verbose=0)
@@ -143,7 +159,8 @@ def main():
     task = mz.tasks.Classification(num_classes=2)
     task.metrics = [
         mz.metrics.Precision(),
-        mz.metrics.Recall()
+        mz.metrics.Recall(),
+        mz.metrics.F1()
     ]
     # if args.model == "drmm":
     #     ranking_task = mz.tasks.Ranking(loss=mz.losses.RankCrossEntropyLoss(num_neg=args.num_neg))
@@ -157,7 +174,7 @@ def main():
 
     # model param
     if args.model == "arci":
-        model = mz.models.ArcI()
+        model = mz.models.ArcI(optimizer=optimizer)
         model.params['input_shapes'] = preprocessor.context['input_shapes']
         model.params['task'] = task
         model.params['embedding_input_dim'] = preprocessor.context['vocab_size']
@@ -182,9 +199,8 @@ def main():
         model.params['mlp_num_fan_out'] = args.mlp_num_fan_out
         model.params['mlp_activation_func'] = args.mlp_activation_fn # "relu"
         model.params['dropout_rate'] = args.dropout
-        model.params['optimizer'] = args.optimizer
     elif args.model == "drmm":
-        model = mz.models.DRMM()
+        model = mz.models.DRMM(optimizer=optimizer)
         model.params['input_shapes'] = [[args.max_seq_len, ], [args.max_seq_len, args.bin_size, ]]
         model.params['task'] = task
         model.params['mask_value'] = 0
@@ -194,9 +210,8 @@ def main():
         model.params['mlp_num_units'] = args.mlp_hidden_size
         model.params['mlp_num_fan_out'] = args.mlp_num_fan_out
         model.params['mlp_activation_func'] = args.mlp_activation_fn # 'tanh'
-        model.params['optimizer'] = args.optimizer
     elif args.model == "match_pyramid":
-        model = mz.models.MatchPyramid()
+        model = mz.models.MatchPyramid(optimizer=optimizer)
         model.params['input_shapes'] = preprocessor.context['input_shapes']
         model.params['task'] = task
         model.params['embedding_input_dim'] = preprocessor.context['vocab_size']
@@ -213,7 +228,6 @@ def main():
         model.params['kernel_count'] = kernel_count
         model.params['kernel_size'] = kernel_size
         model.params['dpool_size'] = dpool_size
-        model.params['optimizer'] = args.optimizer
         model.params['dropout_rate'] = args.dropout
     else:
         raise ValueError("Unsupported model names: {}".format(args.model))
@@ -241,21 +255,21 @@ def main():
             dev_x, dev_y = valid_pack_processed[:].unpack()
         else:
             try:
-                dev_generator = get_generator(args, valid_pack_processed, embedding_matrix)
+                dev_generator = get_generator(args, valid_pack_processed, embedding_matrix, stage="valid")
             except ValueError as ve:
                 logger.error("Error in get generator!", ve)
             dev_x, dev_y = dev_generator[:]
         evaluate = mz.callbacks.EvaluateAllMetrics(model, x=dev_x, y=dev_y, batch_size=args.eval_batch_size,
-                                                   model_save_path=args.output_dir.format(model=args.model, n_epoch=args.n_epoch))
+                                                   model_save_path=args.output_dir.format(model=args.model))
     # train
     if args.do_train:
         # remove previous model directory
-        output_dir = args.output_dir.format(model=args.model, n_epoch=args.n_epoch)
+        output_dir = args.output_dir.format(model=args.model)
         if os.path.exists(output_dir):
             shutil.rmtree(output_dir)
 
         try:
-            train_generator = get_generator(args, train_pack_processed, embedding_matrix)
+            train_generator = get_generator(args, train_pack_processed, embedding_matrix, stage="train")
         except ValueError as ve:
             logger.error("Error in get generator!", ve)
 
@@ -266,7 +280,7 @@ def main():
 
     if args.do_pred:
         try:
-            test_generator = get_generator(args, predict_pack_processed, embedding_matrix)
+            test_generator = get_generator(args, predict_pack_processed, embedding_matrix, stage="test")
         except ValueError as ve:
             logger.error("Error in get generator!", ve)
 

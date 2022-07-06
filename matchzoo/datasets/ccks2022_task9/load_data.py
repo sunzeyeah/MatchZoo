@@ -25,8 +25,8 @@ def load_data(data_root, stage: str = 'train', task: str = 'classification'):# \
         raise ValueError(f"{stage} is not a valid stage."
                          f"Must be one of `train`, `dev`, and `test`.")
 
-    # file_path = os.path.join(data_root, f'finetune_train_{stage}.tsv')
-    file_path = os.path.join(data_root, f'finetune_{stage}_100.tsv')
+    file_path = os.path.join(data_root, f'finetune_train_{stage}.tsv')
+    # file_path = os.path.join(data_root, f'finetune_{stage}_100.tsv')
     data_pack = _read_data(file_path)
     # if filter and stage in ('dev', 'test'):
     #     ref_path = data_root.joinpath(f'WikiQA-{stage}.ref')

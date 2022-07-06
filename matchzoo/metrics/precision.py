@@ -9,7 +9,7 @@ class Precision(engine.BaseMetric):
 
     ALIAS = 'precision'
 
-    def __init__(self, k: int = 1, threshold: float = 0.):
+    def __init__(self, k: int = 1, threshold: float = 0.5):
         """
         :class:`PrecisionMetric` constructor.
 
@@ -23,34 +23,54 @@ class Precision(engine.BaseMetric):
         """:return: Formated string representation of the metric."""
         return f"{self.ALIAS}@{self._k}({self._threshold})"
 
+    # def __call__(self, y_true: np.array, y_pred: np.array) -> float:
+    #     """
+    #     Calculate precision@k.
+    #
+    #     Example:
+    #         >>> y_true = [0, 0, 0, 1]
+    #         >>> y_pred = [0.2, 0.4, 0.3, 0.1]
+    #         >>> Precision(k=1)(y_true, y_pred)
+    #         0.0
+    #         >>> Precision(k=2)(y_true, y_pred)
+    #         0.0
+    #         >>> Precision(k=4)(y_true, y_pred)
+    #         0.25
+    #         >>> Precision(k=5)(y_true, y_pred)
+    #         0.2
+    #
+    #     :param y_true: The ground true label of each document.
+    #     :param y_pred: The predicted scores of each document.
+    #     :return: Precision @ k
+    #     :raises: ValueError: len(r) must be >= k.
+    #     """
+    #     if self._k <= 0:
+    #         raise ValueError('self._k must be larger than 0.')
+    #     coupled_pair = engine.sort_and_couple(y_true, y_pred)
+    #     precision = 0.0
+    #     for idx, (label, score) in enumerate(coupled_pair):
+    #         if idx >= self._k:
+    #             break
+    #         if label > self._threshold:
+    #             precision += 1.
+    #     return precision / self._k
+
     def __call__(self, y_true: np.array, y_pred: np.array) -> float:
         """
         Calculate precision@k.
-
-        Example:
-            >>> y_true = [0, 0, 0, 1]
-            >>> y_pred = [0.2, 0.4, 0.3, 0.1]
-            >>> Precision(k=1)(y_true, y_pred)
-            0.0
-            >>> Precision(k=2)(y_true, y_pred)
-            0.0
-            >>> Precision(k=4)(y_true, y_pred)
-            0.25
-            >>> Precision(k=5)(y_true, y_pred)
-            0.2
 
         :param y_true: The ground true label of each document.
         :param y_pred: The predicted scores of each document.
         :return: Precision @ k
         :raises: ValueError: len(r) must be >= k.
         """
-        if self._k <= 0:
-            raise ValueError('self._k must be larger than 0.')
-        coupled_pair = engine.sort_and_couple(y_true, y_pred)
-        precision = 0.0
-        for idx, (label, score) in enumerate(coupled_pair):
-            if idx >= self._k:
-                break
-            if label > self._threshold:
-                precision += 1.
-        return precision / self._k
+        p = 0
+        tp = 0
+
+        for label, score in zip(y_true, y_pred):
+            if score > self._threshold:
+                p += 1
+                if label > 0:
+                    tp += 1
+
+        return tp / p if p > 0 else 0.0

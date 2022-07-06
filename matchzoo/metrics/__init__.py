@@ -1,3 +1,4 @@
+from .f1 import F1
 from .recall import Recall
 from .precision import Precision
 from .average_precision import AveragePrecision
